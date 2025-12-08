@@ -32,10 +32,10 @@ The input data can be provided across multiple files. The program will automatic
 
 ## Conducting Analysis
 * Create a new directory (with any name you like, suppose it's "EXAMPLE") under `Data/input` to store the files used for a single analysis. 
-* change paramarpers in `run.py` in your demand, major para and its option, meaning in the following.
+* change parameters in the head of `run.py` , major parameters are in the following.
   * `project_name`: same as the name of the directory you put input file.
   * `mutation_type`: the mutation type you want to analyse, can only be `"amp"` or `"del"`, which means amplification and deletion.
-  * `classification_threshold`:The decision threshold used to convert predicted probabilities into binary class labels.
+  * `classification_threshold`:The decision threshold used to convert predicted probabilities into binary class labels, default=0.5.
 
 * after changing parameter above, run `run.py` and it will go automatically. The final result will be in `/Main_pack/run/result`
  ## C++ Compilation (Auto & Manual)
@@ -49,14 +49,14 @@ However, **automatic compilation may fail** under some circumstances, such as:
 - Incompatible compiler version
 - Platform-specific issues (e.g., Windows environment)
 
-If automatic compilation fails, please compile the C++ program **manually** as follows:
+If automatic compilation fails, please compile the C++ program manually, the source code is in `/Main_pack/run/src`, please make sure the excutable file is in `/Main_pack/run/build` and named `processor_amp` and `processor_del` example compile command are as follows:
 
-#### For AMP mode:
+#### For AMP:
 ```bash
 g++ -std=gnu++17 -O3 -Wall -Wextra -Wno-unused-parameter -pthread \
     src/gen_bin_amp_cpp.cpp -o build/processor_amp
 ```
-#### For DEL mode:
+#### For DEL:
 ```bash
 g++ -std=gnu++17 -O3 -Wall -Wextra -Wno-unused-parameter -pthread \
     src/gen_bin_del_cpp.cpp -o build/processor_del
