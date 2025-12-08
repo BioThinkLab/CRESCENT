@@ -36,8 +36,11 @@ The input data can be provided across multiple files. The program will automatic
   * `project_name`: same as the name of the directory you put input file.
   * `mutation_type`: the mutation type you want to analyse, can only be `"amp"` or `"del"`, which means amplification and deletion.
   * `classification_threshold`:The decision threshold used to convert predicted probabilities into binary class labels, default=0.5.
+
+* after changing parameter above, run `run.py` and it will go automatically. The final result will be in `/Main_pack/run/result`
+
  
-##Output File
+## Output File
 
 | Chromosome | Start    | End      |
 |------------|----------|----------|
@@ -48,10 +51,9 @@ The input data can be provided across multiple files. The program will automatic
 
 The final output is a tsv file, each row is a potential CNV segment, the 3 columns contains basic information of each segment, including the chromosome it belongs to and the start, end point of it.
 
-The confidence data will be saved in `/Main_pack/run/bin_with_case_amp`or`/Main_pack/run/bin_with_case_del` depending on mutation type, the confidence of each bin is saved in the last column "prob", which means the confidence of this bin being contained in a CNV segments. You can visualization the confidence data and the heatmap of copy number across a single chromosome using `/Main_pack/visualization/dataset_check.py`.
+If you need more detailed result for further manual analysis, the confidence data are saved in `/Main_pack/run/bin_with_case_amp/<name_of_input_directory>`or`/Main_pack/run/bin_with_case_del/<name_of_input_directory>` depending on mutation type, the confidence of each bin is saved in the last column "prob", which means the confidence of this bin being contained in a CNV segments. You can visualization the confidence data and the heatmap of copy number across a single chromosome using `/Main_pack/visualization/dataset_check.py`.
 
 
-* after changing parameter above, run `run.py` and it will go automatically. The final result will be in `/Main_pack/run/result`
  ## C++ Compilation (Auto & Manual)
 
 This project includes an automatic C++ compilation step.  
