@@ -7,11 +7,11 @@ import plotly.graph_objs as go
 
 from dash import Dash, dcc, html, Input, Output, State, no_update
 
-BASE_DIR = "/Users/sanjati/jangoTemp/temp2/pycharmD"
+BASE_DIR = ".."
 
-# ---- 吸附阈值固定在代码中（不再在 UI 中配置）----
-SNAP_TOL_BIN = 300        # bin 模式下的吸附阈值（单位：bin）
-SNAP_TOL_BP  = 300_000    # genomic 模式下的吸附阈值（单位：bp）
+# ---- Snap tolerance is fixed in code (no longer configurable in the UI) ----
+SNAP_TOL_BIN = 300        # Snap tolerance in bin mode (unit: bin)
+SNAP_TOL_BP  = 300_000    # Snap tolerance in genomic mode (unit: bp)
 
 SAMPLE_COL_START = 4
 SAMPLE_COL_END = 38
@@ -65,7 +65,7 @@ def ensure_tc_dict(d):
     return d
 
 app = Dash(__name__)
-# 允许 duplicate 回调在首帧执行（Dash 2.9+ 支持）
+# Allow duplicate callbacks to run on the initial frame (Dash 2.9+)
 app.config.prevent_initial_callbacks = "initial_duplicate"
 
 SERVER_TITLE = "Type Centers Visual Editor"
@@ -77,26 +77,31 @@ app.layout = html.Div([
         html.Div([html.Label("Cancer Type"),
                   dcc.Input(id="inp-cancer", value="BLCA", debounce=True, style={"width": "140px"})],
                  style={"display": "inline-block", "margin-right": "16px"}),
-        html.Div([html.Label("CNV 类型"),
+
+        html.Div([html.Label("CNV Type"),
                   dcc.Dropdown(id="dd-type", clearable=False,
-                               options=[{"label": "AMP", "value": "amp"}, {"label": "DEL", "value": "del"}],
+                               options=[{"label": "AMP", "value": "amp"},
+                                        {"label": "DEL", "value": "del"}],
                                value="amp", style={"width": "120px"})],
                  style={"display": "inline-block", "margin-right": "16px"}),
+
         html.Div([html.Label("Chromosome"),
                   dcc.Dropdown(id="dd-chrom", clearable=False,
                                options=[{"label": c, "value": c} for c in CHROMS],
                                value="chr1", style={"width": "140px"})],
                  style={"display": "inline-block", "margin-right": "16px"}),
-        html.Div([html.Label("X 轴模式"),
+
+        html.Div([html.Label("X-axis Mode"),
                   dcc.Dropdown(id="dd-xmode", clearable=False,
-                               options=[{"label": "Bin Index（固定宽）", "value": "bin"},
-                                        {"label": "Genomic（真实坐标）", "value": "genomic"}],
+                               options=[{"label": "Bin Index (fixed width)", "value": "bin"},
+                                        {"label": "Genomic (real coordinates)", "value": "genomic"}],
                                value="bin", style={"width": "200px"})],
                  style={"display": "inline-block", "margin-right": "16px"}),
-        html.Div([html.Label("YAML 路径"),
+
+        html.Div([html.Label("YAML Path"),
                   dcc.Input(id="inp-yaml", value="../gen_dataset/type_centers_index.yaml", debounce=True,
                             style={"width": "320px"}),
-                  html.Button("加载 YAML", id="btn-load-yaml", n_clicks=0, style={"margin-left": "8px"})],
+                  html.Button("Load YAML", id="btn-load-yaml", n_clicks=0, style={"margin-left": "8px"})],
                  style={"display": "inline-block", "margin-right": "16px", "verticalAlign": "top"}),
     ], style={"margin": "8px 0"}),
 
@@ -105,22 +110,22 @@ app.layout = html.Div([
     html.Div([
         dcc.Checklist(
             id="add-mode-toggle",
-            options=[{"label": "进入添加模式 (Add Mode)", "value": "add"}],
+            options=[{"label": "Enter Add Mode", "value": "add"}],
             value=[],
             inputStyle={"margin-right": "8px"},
             labelStyle={"display": "inline-block", "margin-right": "16px"}
         ),
         dcc.RadioItems(
             id="add-to-label",
-            options=[{"label": "添加到 pos", "value": "pos"},
-                     {"label": "添加到 neg", "value": "neg"}],
+            options=[{"label": "Add to pos", "value": "pos"},
+                     {"label": "Add to neg", "value": "neg"}],
             value="pos", inline=True, style={"margin-left": "16px", "margin-right": "16px"}
         ),
 
-        html.Button("确认添加", id="confirm-add-btn", n_clicks=0, disabled=True, style={"margin-right": "8px"}),
-        html.Button("删除所选", id="delete-center-btn", n_clicks=0, disabled=True, style={"margin-right": "8px"}),
-        html.Button("复位选择", id="reset-select-btn", n_clicks=0, style={"margin-right": "16px"}),
-        html.Button("保存到YAML", id="save-yaml-btn", n_clicks=0),
+        html.Button("Confirm Add", id="confirm-add-btn", n_clicks=0, disabled=True, style={"margin-right": "8px"}),
+        html.Button("Delete Selected", id="delete-center-btn", n_clicks=0, disabled=True, style={"margin-right": "8px"}),
+        html.Button("Reset Selection", id="reset-select-btn", n_clicks=0, style={"margin-right": "16px"}),
+        html.Button("Save to YAML", id="save-yaml-btn", n_clicks=0),
         html.Span(id="status-text", style={"margin-left": "12px", "color": "#555"}),
     ], style={"margin": "8px 0"}),
 
@@ -132,7 +137,7 @@ app.layout = html.Div([
 ], style={"maxWidth": "2000px", "margin": "10px auto"})
 
 
-# === 1) 加载 YAML ===
+# === 1) Load YAML ===
 @app.callback(
     Output("centers-store", "data"),
     Output("status-text", "children"),
@@ -151,12 +156,12 @@ def on_load_yaml(nc, yaml_path):
             data = {}
         data = ensure_tc_dict(data)
         data["_centers_yaml_path"] = yaml_path
-        return data, f"已加载: {yaml_path}"
+        return data, f"Loaded: {yaml_path}"
     except Exception as e:
-        return no_update, f"加载失败: {e}"
+        return no_update, f"Load failed: {e}"
 
 
-# === 2) 绘图（含 uirevision 保持缩放 & 预览线） ===
+# === 2) Plotting (with uirevision to keep zoom & preview lines) ===
 @app.callback(
     Output("chr-graph", "figure"),
     Output("centers-store", "data", allow_duplicate=True),
@@ -187,10 +192,13 @@ def update_figure(cancer_type, f_type, chrom, x_mode, centers_state, provisional
 
     if df.empty or "Start" not in df.columns or "End" not in df.columns:
         fig.update_layout(
-            title=f"{cancer_type} — {chrom}（{f_type.upper()}）",
-            annotations=[dict(text=f"数据缺失或列名不完整：{subtitle}", x=0.5, y=0.5, xref="paper", yref="paper",
-                              showarrow=False, font=dict(size=14, color="crimson"))],
-            # 关键：即便无数据，也设置 uirevision，保持交互状态一致
+            title=f"{cancer_type} — {chrom} ({f_type.upper()})",
+            annotations=[dict(
+                text=f"Missing data or incomplete columns: {subtitle}",
+                x=0.5, y=0.5, xref="paper", yref="paper",
+                showarrow=False, font=dict(size=14, color="crimson")
+            )],
+            # Important: even if there is no data, still set uirevision to keep interaction state consistent
             uirevision=f"{cancer_type}-{chrom}-{x_mode}",
         )
         return fig, centers_state
@@ -219,7 +227,8 @@ def update_figure(cancer_type, f_type, chrom, x_mode, centers_state, provisional
     if x_mode == "bin":
         hm_hover = "bin=%{x}<br>start=%{customdata[0]}<br>end=%{customdata[1]}<br>value=%{z}<extra></extra>"
     else:
-        hm_hover = "genomic=%{x}<br>bin=%{customdata[2]}<br>start=%{customdata[0]}<br>end=%{customdata[1]}<br>value=%{z}<extra></extra>"
+        hm_hover = ("genomic=%{x}<br>bin=%{customdata[2]}<br>start=%{customdata[0]}"
+                    "<br>end=%{customdata[1]}<br>value=%{z}<extra></extra>")
 
     fig.add_trace(go.Heatmap(
         x=x_for_plot, y=[f"s{i}" for i in range(mat_clip.shape[0])],
@@ -232,7 +241,8 @@ def update_figure(cancer_type, f_type, chrom, x_mode, centers_state, provisional
         if x_mode == "bin":
             line_hover = "bin=%{x}<br>start=%{customdata[0]}<br>end=%{customdata[1]}<br>prob=%{y:.3f}<extra></extra>"
         else:
-            line_hover = "genomic=%{x}<br>bin=%{customdata[2]}<br>start=%{customdata[0]}<br>end=%{customdata[1]}<br>prob=%{y:.3f}<extra></extra>"
+            line_hover = ("genomic=%{x}<br>bin=%{customdata[2]}<br>start=%{customdata[0]}"
+                          "<br>end=%{customdata[1]}<br>prob=%{y:.3f}<extra></extra>")
         fig.add_trace(go.Scatter(
             x=x_for_plot, y=df["prob"], mode="lines", name="prob",
             line=dict(color="red", width=2.5), yaxis="y2",
@@ -245,7 +255,7 @@ def update_figure(cancer_type, f_type, chrom, x_mode, centers_state, provisional
     def _x_from_value(v):
         return v if x_mode == "bin" else float(v)
 
-    # 既有 centers
+    # Existing centers
     for lab, color, dash in (("pos", "white", "solid"), ("neg", "white", "dash")):
         for v in centers.get(lab, []) or []:
             x = _x_from_value(v)
@@ -254,7 +264,7 @@ def update_figure(cancer_type, f_type, chrom, x_mode, centers_state, provisional
                 x0=x, x1=x, y0=0, y1=1, line=dict(color=color, width=2, dash=dash)
             ))
 
-    # 选中中心（黑实线）
+    # Selected center (black solid line)
     if selection and selection.get("type") == cancer_type and selection.get("chrom") == chrom:
         x = _x_from_value(selection["value"])
         shapes.append(dict(
@@ -262,7 +272,7 @@ def update_figure(cancer_type, f_type, chrom, x_mode, centers_state, provisional
             x0=x, x1=x, y0=0, y1=1, line=dict(color="black", width=3)
         ))
 
-    # 预览中心（与目标标签同色的点线）
+    # Provisional center (dotted line with color depending on label)
     if provisional and provisional.get("type") == cancer_type and provisional.get("chrom") == chrom:
         x = _x_from_value(provisional["value"])
         lab = provisional.get("label", "pos")
@@ -274,7 +284,7 @@ def update_figure(cancer_type, f_type, chrom, x_mode, centers_state, provisional
         ))
 
     fig.update_layout(
-        title=f"{cancer_type} — {chrom}（{f_type.upper()}）",
+        title=f"{cancer_type} — {chrom} ({f_type.upper()})",
         shapes=shapes,
         xaxis=dict(title="Bin Index" if x_mode == "bin" else "Genomic Position"),
         yaxis=dict(title="", showticklabels=False),
@@ -282,7 +292,7 @@ def update_figure(cancer_type, f_type, chrom, x_mode, centers_state, provisional
         height=520,
         margin=dict(l=70, r=80, t=60, b=60),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        # ★ 关键：保持缩放/平移/选中状态
+        # Key: keep zoom/pan/selection state
         uirevision=f"{cancer_type}-{chrom}-{x_mode}",
     )
     fig.add_annotation(
@@ -293,7 +303,7 @@ def update_figure(cancer_type, f_type, chrom, x_mode, centers_state, provisional
     return fig, centers_state
 
 
-# === 3) 图上点击：添加模式 -> 产生预览；非添加模式 -> 吸附选择 ===
+# === 3) Graph click: add mode -> provisional; non-add mode -> snap to existing center ===
 @app.callback(
     Output("selection-store", "data"),
     Output("provisional-store", "data"),
@@ -314,7 +324,7 @@ def on_click_graph(clickData, add_mode, add_to_label, centers_state):
     chrom = centers_state.get("_current_chrom")
     x_mode = centers_state.get("_x_mode", "bin")
     if not cancer_type or not chrom:
-        return no_update, no_update, "请先选择癌种与染色体", True, True
+        return no_update, no_update, "Please select a cancer type and chromosome first", True, True
 
     point = clickData["points"][0]
     x_clicked = float(point["x"])
@@ -336,28 +346,33 @@ def on_click_graph(clickData, add_mode, add_to_label, centers_state):
                 best = cand
         return best
 
-    # 添加模式：只产生预览
+    # Add mode: only create a provisional center
     if "add" in (add_mode or []):
         prov = dict(type=cancer_type, chrom=chrom, label=add_to_label, value=x_clicked)
-        status = f"预览: 准备添加 {add_to_label} center @ {x_clicked:.2f}（点『确认添加』才生效，保存才写入文件）"
+        status = (f"Preview: ready to add {add_to_label} center @ {x_clicked:.2f} "
+                  "(takes effect only after clicking 'Confirm Add', and saving will write it to file)")
         return None, prov, status, False, True
 
-    # 选择模式：吸附最近的 center
+    # Select mode: snap to nearest existing center
     hit = nearest_center(label_dict, x_clicked)
     if not hit:
-        return None, None, "该染色体暂无 center", True, True
+        return None, None, "No centers on this chromosome yet", True, True
 
     lab, idx, val, dist = hit
     tol = float(SNAP_TOL_BIN) if x_mode == "bin" else float(SNAP_TOL_BP)
     if dist <= tol:
         sel = dict(type=cancer_type, chrom=chrom, label=lab, index=idx, value=val)
-        status = f"选中 {lab} center @ {val:.2f}（可『删除所选』，或『复位选择』取消）"
+        status = (f"Selected {lab} center @ {val:.2f} "
+                  "(you may 'Delete Selected', or 'Reset Selection' to cancel)")
         return sel, None, status, True, False
     else:
-        return None, None, f"附近未找到可吸附的 center（最近距离 {dist:.2f} 超出阈值 {tol:.0f}）", True, True
+        return None, None, (
+            f"No center found within snap tolerance (nearest distance {dist:.2f} "
+            f"exceeds threshold {tol:.0f})"
+        ), True, True
 
 
-# === 4) 确认添加 ===
+# === 4) Confirm Add ===
 @app.callback(
     Output("centers-store", "data", allow_duplicate=True),
     Output("provisional-store", "data", allow_duplicate=True),
@@ -371,7 +386,7 @@ def confirm_add(nc, prov, centers_state):
     if not nc:
         return no_update, no_update, no_update
     if not prov:
-        return no_update, no_update, "没有待确认的预览中心"
+        return no_update, no_update, "No provisional center to confirm"
 
     t, c, lab, val = prov["type"], prov["chrom"], prov["label"], float(prov["value"])
     centers_state = ensure_tc_dict(centers_state or {})
@@ -379,10 +394,13 @@ def confirm_add(nc, prov, centers_state):
     arr = centers_state["TYPE_CENTERS"][t][c][lab]
     arr.append(val)
     arr.sort()
-    return centers_state, None, f"已添加 {lab} center @ {val:.2f}（尚未写入文件，点『保存到YAML』才会落盘）"
+    return centers_state, None, (
+        f"Added {lab} center @ {val:.2f} "
+        "(not yet saved to file; click 'Save to YAML' to write it to disk)"
+    )
 
 
-# === 5) 删除选中 ===
+# === 5) Delete Selected ===
 @app.callback(
     Output("centers-store", "data", allow_duplicate=True),
     Output("selection-store", "data", allow_duplicate=True),
@@ -396,7 +414,7 @@ def delete_selected(nc, sel, centers_state):
     if not nc:
         return no_update, no_update, no_update
     if not sel:
-        return no_update, no_update, "当前没有选中的 center 可删除"
+        return no_update, no_update, "No selected center to delete"
 
     t, c, lab, idx, val = sel["type"], sel["chrom"], sel["label"], int(sel["index"]), float(sel["value"])
     arr = (centers_state.get("TYPE_CENTERS", {})
@@ -404,16 +422,19 @@ def delete_selected(nc, sel, centers_state):
            .get(c, {})
            .get(lab, []))
     if not arr:
-        return no_update, None, "找不到要删除的 center"
+        return no_update, None, "Could not find the center to delete"
     try:
         arr.pop(idx)
-        msg = f"已删除 {lab} center @ {val:.2f}（尚未写入文件，点『保存到YAML』才会落盘）"
+        msg = (
+            f"Deleted {lab} center @ {val:.2f} "
+            "(not yet saved to file; click 'Save to YAML' to write changes to disk)"
+        )
         return centers_state, None, msg
     except Exception:
-        return no_update, None, "删除失败：索引无效"
+        return no_update, None, "Delete failed: invalid index"
 
 
-# === 6) 复位选择/预览 ===
+# === 6) Reset selection/provisional ===
 @app.callback(
     Output("selection-store", "data", allow_duplicate=True),
     Output("provisional-store", "data", allow_duplicate=True),
@@ -424,10 +445,10 @@ def delete_selected(nc, sel, centers_state):
 def reset_selection(nc):
     if not nc:
         return no_update, no_update, no_update
-    return None, None, "已复位当前选择/预览"
+    return None, None, "Selection and preview have been reset"
 
 
-# === 7) 保存到 YAML ===
+# === 7) Save to YAML ===
 @app.callback(
     Output("status-text", "children", allow_duplicate=True),
     Input("save-yaml-btn", "n_clicks"),
@@ -443,9 +464,9 @@ def save_yaml(nc, centers_state):
         data_to_dump = {"TYPE_CENTERS": centers_state.get("TYPE_CENTERS", {})}
         with open(out_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(data_to_dump, f, allow_unicode=True, sort_keys=True)
-        return f"已保存到 {out_path}"
+        return f"Saved to {out_path}"
     except Exception as e:
-        return f"保存失败: {e}"
+        return f"Save failed: {e}"
 
 
 if __name__ == "__main__":
