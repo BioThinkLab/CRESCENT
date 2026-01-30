@@ -6,8 +6,6 @@ import plotly.io as pio
 from plotly.subplots import make_subplots
 from PIL import Image
 
-# —— 用户配置区 ——
-# CONFIG 值可以是 0（所有染色体）、单个数字或数字列表
 CONFIG = [
     # {'UCEC': [8,10,17,19]},
     {'GBM': [7,12]},
@@ -162,7 +160,7 @@ def draw_and_save(cancer_type, amp_del_other, chrom_list=None):
                         hoverinfo='none', showlegend=False),
                         row=2, col=1)
 
-            # RUBIC
+            # RUBIC1
             if df_r is not None:
                 r_segs = get_segs_from(df_r)
                 r_gaps = complement(r_segs)

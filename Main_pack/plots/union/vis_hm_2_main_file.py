@@ -97,7 +97,7 @@ def draw_static(cancer_type, amp_del_other, chrom):
 
     # 下方：三条灰色基线，隐藏图例
     x_min, x_max = int(df['Start'].min()), int(df['End'].max())
-    y_pos = {'GISTIC': 3, 'RUBIC': 2, 'OUR': 1}
+    y_pos = {'GISTIC': 3, 'RUBIC1': 2, 'OUR': 1}
     for pos in y_pos.values():
         fig.add_trace(
             go.Scatter(
@@ -110,7 +110,7 @@ def draw_static(cancer_type, amp_del_other, chrom):
 
     # 绘制各方法显著区段（增加最小长度保护）
     for df_bg, color, label in [(df_g, 'green', 'GISTIC'),
-                                (df_r, 'red', 'RUBIC'),
+                                (df_r, 'red', 'RUBIC1'),
                                 (df_o, 'blue', 'OUR')]:
         if df_bg.empty:
             continue

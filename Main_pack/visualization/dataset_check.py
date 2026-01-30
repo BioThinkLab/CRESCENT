@@ -1,20 +1,24 @@
-# app_centers_editor.py
 import os
 import yaml
+import base64
+from datetime import datetime
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objs as go
 
 from dash import Dash, dcc, html, Input, Output, State, no_update
 
-BASE_DIR = ".."
+BASE_DIR = "../run"
 
-# ---- Snap tolerance is fixed in code (no longer configurable in the UI) ----
-SNAP_TOL_BIN = 300        # Snap tolerance in bin mode (unit: bin)
-SNAP_TOL_BP  = 300_000    # Snap tolerance in genomic mode (unit: bp)
+SNAP_TOL_BIN = 300
+SNAP_TOL_BP  = 300_000
 
 SAMPLE_COL_START = 4
 SAMPLE_COL_END = 38
+
+UPLOAD_DIR = os.path.join(os.getcwd(), "uploaded_yamls")
+
 
 def unify_column_case(df: pd.DataFrame) -> pd.DataFrame:
     rename_map = {}
@@ -30,9 +34,11 @@ def unify_column_case(df: pd.DataFrame) -> pd.DataFrame:
         df = df.rename(columns=rename_map)
     return df
 
+
 def clip_by_percentile(mat, lower_q=2, upper_q=98):
     lo, hi = np.percentile(mat, [lower_q, upper_q])
     return np.clip(mat, lo, hi)
+
 
 def format_mb(x):
     try:
@@ -40,17 +46,6 @@ def format_mb(x):
     except Exception:
         return str(x)
 
-def region_to_bin_span(df_bins: pd.DataFrame, s: int, e: int):
-    starts = df_bins["Start"].to_numpy()
-    ends = df_bins["End"].to_numpy()
-    i0 = np.searchsorted(ends, s, side="left")
-    i1 = np.searchsorted(starts, e, side="right") - 1
-    n = len(df_bins)
-    i0 = max(0, min(i0, n - 1))
-    i1 = max(0, min(i1, n - 1))
-    if i1 < i0:
-        i0, i1 = i1, i0
-    return i0, i1
 
 def load_tsv(path: str) -> pd.DataFrame:
     if os.path.exists(path):
@@ -58,110 +53,437 @@ def load_tsv(path: str) -> pd.DataFrame:
         return unify_column_case(df)
     return pd.DataFrame()
 
+
 def ensure_tc_dict(d):
     if d is None:
         d = {}
     d.setdefault("TYPE_CENTERS", {})
     return d
 
+
+def list_subdirs(path: str):
+    if not os.path.isdir(path):
+        return []
+    out = []
+    for name in os.listdir(path):
+        if name.startswith("."):
+            continue
+        full = os.path.join(path, name)
+        if os.path.isdir(full):
+            out.append(name)
+    return sorted(out)
+
+
+def cancer_root_for_type(f_type: str) -> str:
+    return os.path.join(
+        BASE_DIR,
+        "bin_with_case_amp" if f_type == "amp" else "bin_with_case_del",
+    )
+
+
+def default_cancer_options(f_type: str):
+    root = cancer_root_for_type(f_type)
+    cancers = list_subdirs(root)
+    return [{"label": c, "value": c} for c in cancers], (cancers[0] if cancers else None)
+
+
+def _safe_mkdir(path: str):
+    os.makedirs(path, exist_ok=True)
+
+
+def _timestamp_name():
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def _decode_upload_contents(contents: str) -> bytes:
+    # contents = "data:...;base64,XXXX"
+    if not contents or "," not in contents:
+        return b""
+    b64 = contents.split(",", 1)[1]
+    return base64.b64decode(b64)
+
+
 app = Dash(__name__)
-# Allow duplicate callbacks to run on the initial frame (Dash 2.9+)
 app.config.prevent_initial_callbacks = "initial_duplicate"
 
-SERVER_TITLE = "Type Centers Visual Editor"
+SERVER_TITLE = "Visual Editor"
 CHROMS = [f"chr{i}" for i in range(1, 23)]
 
-app.layout = html.Div([
-    html.H2(SERVER_TITLE),
-    html.Div([
-        html.Div([html.Label("Cancer Type"),
-                  dcc.Input(id="inp-cancer", value="BLCA", debounce=True, style={"width": "140px"})],
-                 style={"display": "inline-block", "margin-right": "16px"}),
+init_opts, init_val = default_cancer_options("amp")
+if init_val is None:
+    init_val = "BLCA"
 
-        html.Div([html.Label("CNV Type"),
-                  dcc.Dropdown(id="dd-type", clearable=False,
-                               options=[{"label": "AMP", "value": "amp"},
-                                        {"label": "DEL", "value": "del"}],
-                               value="amp", style={"width": "120px"})],
-                 style={"display": "inline-block", "margin-right": "16px"}),
-
-        html.Div([html.Label("Chromosome"),
-                  dcc.Dropdown(id="dd-chrom", clearable=False,
-                               options=[{"label": c, "value": c} for c in CHROMS],
-                               value="chr1", style={"width": "140px"})],
-                 style={"display": "inline-block", "margin-right": "16px"}),
-
-        html.Div([html.Label("X-axis Mode"),
-                  dcc.Dropdown(id="dd-xmode", clearable=False,
-                               options=[{"label": "Bin Index (fixed width)", "value": "bin"},
-                                        {"label": "Genomic (real coordinates)", "value": "genomic"}],
-                               value="bin", style={"width": "200px"})],
-                 style={"display": "inline-block", "margin-right": "16px"}),
-
-        html.Div([html.Label("YAML Path"),
-                  dcc.Input(id="inp-yaml", value="../gen_dataset/type_centers_index.yaml", debounce=True,
-                            style={"width": "320px"}),
-                  html.Button("Load YAML", id="btn-load-yaml", n_clicks=0, style={"margin-left": "8px"})],
-                 style={"display": "inline-block", "margin-right": "16px", "verticalAlign": "top"}),
-    ], style={"margin": "8px 0"}),
-
-    html.Hr(),
-
-    html.Div([
-        dcc.Checklist(
-            id="add-mode-toggle",
-            options=[{"label": "Enter Add Mode", "value": "add"}],
-            value=[],
-            inputStyle={"margin-right": "8px"},
-            labelStyle={"display": "inline-block", "margin-right": "16px"}
-        ),
-        dcc.RadioItems(
-            id="add-to-label",
-            options=[{"label": "Add to pos", "value": "pos"},
-                     {"label": "Add to neg", "value": "neg"}],
-            value="pos", inline=True, style={"margin-left": "16px", "margin-right": "16px"}
+app.layout = html.Div(
+    className="app-shell",
+    children=[
+        html.Div(
+            className="header",
+            children=[
+                html.Div(children=[
+                    html.H2(SERVER_TITLE, className="title"),
+                ]),
+            ],
         ),
 
-        html.Button("Confirm Add", id="confirm-add-btn", n_clicks=0, disabled=True, style={"margin-right": "8px"}),
-        html.Button("Delete Selected", id="delete-center-btn", n_clicks=0, disabled=True, style={"margin-right": "8px"}),
-        html.Button("Reset Selection", id="reset-select-btn", n_clicks=0, style={"margin-right": "16px"}),
-        html.Button("Save to YAML", id="save-yaml-btn", n_clicks=0),
-        html.Span(id="status-text", style={"margin-left": "12px", "color": "#555"}),
-    ], style={"margin": "8px 0"}),
+        # Panel: Controls
+        html.Div(
+            className="panel",
+            children=[
+                html.Div(
+                    className="panel-header",
+                    children=[
+                        html.Div("Dataset / View Controls", className="panel-title"),
+                        html.Div("Tip: Zoom state is preserved via uirevision.", className="badge"),
+                    ],
+                ),
 
-    dcc.Store(id="centers-store"),
-    dcc.Store(id="selection-store"),
-    dcc.Store(id="provisional-store"),
+                html.Div(
+                    className="grid",
+                    children=[
+                        html.Div(
+                            className="field",
+                            style={"gridColumn": "span 3"},
+                            children=[
+                                html.Div("Dataset", className="label"),
+                                dcc.Dropdown(
+                                    id="inp-cancer",
+                                    clearable=False,
+                                    options=init_opts,
+                                    value=init_val,
+                                ),
+                            ],
+                        ),
 
-    dcc.Graph(id="chr-graph", figure=go.Figure(), clear_on_unhover=True)
-], style={"maxWidth": "2000px", "margin": "10px auto"})
+                        html.Div(
+                            className="field",
+                            style={"gridColumn": "span 2"},
+                            children=[
+                                html.Div("Mutation Type", className="label"),
+                                dcc.Dropdown(
+                                    id="dd-type",
+                                    clearable=False,
+                                    options=[{"label": "AMP", "value": "amp"},
+                                             {"label": "DEL", "value": "del"}],
+                                    value="amp",
+                                ),
+                            ],
+                        ),
+
+                        html.Div(
+                            className="field",
+                            style={"gridColumn": "span 2"},
+                            children=[
+                                html.Div("Chromosome", className="label"),
+                                dcc.Dropdown(
+                                    id="dd-chrom",
+                                    clearable=False,
+                                    options=[{"label": c, "value": c} for c in CHROMS],
+                                    value="chr1",
+                                ),
+                            ],
+                        ),
+
+                        html.Div(
+                            className="field",
+                            style={"gridColumn": "span 2"},
+                            children=[
+                                html.Div("X-axis Mode", className="label"),
+                                dcc.Dropdown(
+                                    id="dd-xmode",
+                                    clearable=False,
+                                    options=[{"label": "Bin Index (fixed width)", "value": "bin"},
+                                             {"label": "Genomic (real coordinates)", "value": "genomic"}],
+                                    value="bin",
+                                ),
+                            ],
+                        ),
+
+                        # YAML controls
+                        html.Div(
+                            className="field",
+                            style={"gridColumn": "span 3"},
+                            children=[
+                                html.Div("YAML File", className="label"),
+                                html.Div(
+                                    className="inline-row",
+                                    children=[
+                                        dcc.Input(
+                                            id="inp-yaml",
+                                            value="",
+                                            placeholder="(no file loaded)",
+                                            debounce=False,
+                                            className="dcc-input",
+                                            style={"flex": "1 1 520px"},
+                                            readOnly=True,
+                                        ),
+                                        html.Button(
+                                            "Create new file",
+                                            id="btn-create-yaml",
+                                            n_clicks=0,
+                                            className="btn btn-primary",
+                                        ),
+                                        dcc.Upload(
+                                            id="upload-yaml",
+                                            accept=".yaml,.yml",
+                                            multiple=False,
+                                            children=html.Button(
+                                                "Load file",
+                                                id="btn-load-file",
+                                                n_clicks=0,
+                                                className="btn",
+                                            ),
+                                        ),
+                                    ],
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+        ),
+
+        html.Div(className="hr"),
+
+        # Panel: Actions
+        html.Div(
+            className="panel",
+            children=[
+                html.Div(
+                    className="panel-header",
+                    children=[
+                        html.Div("Edit Actions", className="panel-title"),
+                        html.Div("Add / Select / Delete centers", className="badge"),
+                    ],
+                ),
+
+                html.Div(
+                    className="inline-row",
+                    children=[
+                        # Add mode switch + help
+                        html.Div(
+                            className="inline-row",
+                            style={"gap": "8px"},
+                            children=[
+                                dcc.Checklist(
+                                    id="add-mode-toggle",
+                                    options=[{"label": "Add mode", "value": "add"}],
+                                    value=[],
+                                    className="switch",
+                                ),
+                                html.Button("?", id="help-btn", n_clicks=0, className="btn btn-icon"),
+                                html.Div(
+                                    id="help-popover",
+                                    className="popover",
+                                    children=[
+                                        html.Div(
+                                            className="popover-head",
+                                            children=[
+                                                html.Div("Add mode help", className="popover-title"),
+                                                html.Button("×", id="help-close", n_clicks=0, className="popover-close"),
+                                            ],
+                                        ),
+                                        html.Div(
+                                            className="popover-body",
+                                            children=[
+                                                html.Div("• Click in Chromosome View to preview (dotted)."),
+                                                html.Div("• Red = pos, Green = neg."),
+                                                html.Div("• Click Confirm Add to apply."),
+                                            ],
+                                        ),
+                                    ],
+                                    style={"display": "none"},
+                                ),
+                            ],
+                        ),
+
+                        # Segmented toggle (pos/neg) with visible selected feedback
+                        dcc.Tabs(
+                            id="add-to-label",
+                            value="pos",
+                            className="seg-tabs",
+                            parent_className="seg-tabs-parent",
+                            children=[
+                                dcc.Tab(label="Add \n pos", value="pos",
+                                        className="seg-tab", selected_className="seg-tab--selected"),
+                                dcc.Tab(label="Add \n neg", value="neg",
+                                        className="seg-tab", selected_className="seg-tab--selected"),
+                            ],
+                        ),
+
+                        html.Div(style={"flex": "1 1 auto"}),
+
+                        html.Button(
+                            "Confirm Add",
+                            id="confirm-add-btn",
+                            n_clicks=0,
+                            disabled=True,
+                            className="btn btn-primary",
+                        ),
+                        html.Button(
+                            "Delete Selected",
+                            id="delete-center-btn",
+                            n_clicks=0,
+                            disabled=True,
+                            className="btn btn-danger",
+                        ),
+                        html.Button(
+                            "Reset Selection",
+                            id="reset-select-btn",
+                            n_clicks=0,
+                            className="btn",
+                        ),
+                        html.Button(
+                            "Save to YAML",
+                            id="save-yaml-btn",
+                            n_clicks=0,
+                            className="btn btn-primary",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+
+        html.Div(className="hr"),
+
+        dcc.Store(id="centers-store"),
+        dcc.Store(id="selection-store"),
+        dcc.Store(id="provisional-store"),
+        dcc.Store(id="help-open-store", data=False),
+
+        # Graph
+        html.Div(
+            className="panel",
+            children=[
+                html.Div(
+                    className="panel-header",
+                    children=[
+                        html.Div("Chromosome View", className="panel-title"),
+                        html.Div(id="status-text", className="badge"),
+                    ],
+                ),
+                html.Div(
+                    className="graph-wrap",
+                    children=[
+                        dcc.Graph(
+                            id="chr-graph",
+                            figure=go.Figure(),
+                            clear_on_unhover=True,
+                            config={"displaylogo": False, "scrollZoom": True},
+                        )
+                    ],
+                ),
+            ],
+        ),
+    ],
+)
 
 
-# === 1) Load YAML ===
+# --- Help popover toggle ---
+@app.callback(
+    Output("help-open-store", "data"),
+    Input("help-btn", "n_clicks"),
+    Input("help-close", "n_clicks"),
+    State("help-open-store", "data"),
+    prevent_initial_call=True
+)
+def toggle_help_popover(n_help, n_close, is_open):
+    ctx = getattr(__import__("dash"), "callback_context")
+    if not ctx.triggered:
+        return is_open
+    trig = ctx.triggered[0]["prop_id"].split(".")[0]
+    if trig == "help-close":
+        return False
+    # help-btn toggles
+    return not bool(is_open)
+
+
+@app.callback(
+    Output("help-popover", "style"),
+    Input("help-open-store", "data"),
+)
+def render_help_popover(is_open):
+    return {"display": "block"} if is_open else {"display": "none"}
+
+
+# --- Refresh Cancer Type list when CNV Type changes ---
+@app.callback(
+    Output("inp-cancer", "options"),
+    Output("inp-cancer", "value"),
+    Output("status-text", "children", allow_duplicate=True),
+    Input("dd-type", "value"),
+    State("inp-cancer", "value"),
+    prevent_initial_call=True
+)
+def refresh_cancer_dropdown(f_type, current_value):
+    opts, default_val = default_cancer_options(f_type)
+    if not opts:
+        msg = f"Warning: no cancer type folders found under {os.path.relpath(cancer_root_for_type(f_type), BASE_DIR)}"
+        return [], current_value, msg
+
+    allowed = {o["value"] for o in opts}
+    new_val = current_value if current_value in allowed else default_val
+    msg = f"Cancer Type list updated ({len(opts)} found) for {f_type.upper()}"
+    return opts, new_val, msg
+
+
+# --- Create new YAML file (server-side) ---
 @app.callback(
     Output("centers-store", "data"),
-    Output("status-text", "children"),
-    Input("btn-load-yaml", "n_clicks"),
-    State("inp-yaml", "value"),
-    prevent_initial_call=True,
+    Output("inp-yaml", "value"),
+    Output("status-text", "children", allow_duplicate=True),
+    Input("btn-create-yaml", "n_clicks"),
+    prevent_initial_call=True
 )
-def on_load_yaml(nc, yaml_path):
+def create_new_yaml(nc):
     if not nc:
-        return no_update, no_update
+        return no_update, no_update, no_update
+
+    fname = f"{_timestamp_name()}.yaml"
+    out_path = os.path.join(os.getcwd(), fname)
+
+    data = {"TYPE_CENTERS": {}}
+    with open(out_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(data, f, allow_unicode=True, sort_keys=True)
+
+    st = ensure_tc_dict({})
+    st["_centers_yaml_path"] = out_path
+    return st, out_path, f"Created: {out_path}"
+
+
+# --- Load YAML via file picker (Upload) ---
+@app.callback(
+    Output("centers-store", "data", allow_duplicate=True),
+    Output("inp-yaml", "value", allow_duplicate=True),
+    Output("status-text", "children", allow_duplicate=True),
+    Input("upload-yaml", "contents"),
+    State("upload-yaml", "filename"),
+    prevent_initial_call=True
+)
+def load_yaml_from_upload(contents, filename):
+    if not contents or not filename:
+        return no_update, no_update, no_update
+
     try:
-        if os.path.exists(yaml_path):
-            with open(yaml_path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-        else:
-            data = {}
-        data = ensure_tc_dict(data)
-        data["_centers_yaml_path"] = yaml_path
-        return data, f"Loaded: {yaml_path}"
+        raw = _decode_upload_contents(contents)
+        text = raw.decode("utf-8", errors="replace")
+        parsed = yaml.safe_load(text) or {}
+        parsed = ensure_tc_dict(parsed)
+
+        _safe_mkdir(UPLOAD_DIR)
+        safe_name = os.path.basename(filename)
+        out_path = os.path.join(UPLOAD_DIR, safe_name)
+
+        # persist exact uploaded content
+        with open(out_path, "wb") as f:
+            f.write(raw)
+
+        parsed["_centers_yaml_path"] = out_path
+        return parsed, out_path, f"Loaded: {out_path}"
     except Exception as e:
-        return no_update, f"Load failed: {e}"
+        return no_update, no_update, f"Load failed: {e}"
 
 
-# === 2) Plotting (with uirevision to keep zoom & preview lines) ===
+# === Plotting ===
 @app.callback(
     Output("chr-graph", "figure"),
     Output("centers-store", "data", allow_duplicate=True),
@@ -181,7 +503,7 @@ def update_figure(cancer_type, f_type, chrom, x_mode, centers_state, provisional
 
     main_file = os.path.join(
         BASE_DIR,
-        "bin_with_case_amp_compressed" if f_type == "amp" else "bin_with_case_del_compressed",
+        "bin_with_case_amp" if f_type == "amp" else "bin_with_case_del",
         cancer_type,
         f"cnv_{chrom}" + (".txt" if f_type == "amp" else ".tsv")
     )
@@ -198,8 +520,11 @@ def update_figure(cancer_type, f_type, chrom, x_mode, centers_state, provisional
                 x=0.5, y=0.5, xref="paper", yref="paper",
                 showarrow=False, font=dict(size=14, color="crimson")
             )],
-            # Important: even if there is no data, still set uirevision to keep interaction state consistent
             uirevision=f"{cancer_type}-{chrom}-{x_mode}",
+            height=520,
+            margin=dict(l=70, r=80, t=60, b=60),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
         )
         return fig, centers_state
 
@@ -255,7 +580,6 @@ def update_figure(cancer_type, f_type, chrom, x_mode, centers_state, provisional
     def _x_from_value(v):
         return v if x_mode == "bin" else float(v)
 
-    # Existing centers
     for lab, color, dash in (("pos", "white", "solid"), ("neg", "white", "dash")):
         for v in centers.get(lab, []) or []:
             x = _x_from_value(v)
@@ -264,7 +588,6 @@ def update_figure(cancer_type, f_type, chrom, x_mode, centers_state, provisional
                 x0=x, x1=x, y0=0, y1=1, line=dict(color=color, width=2, dash=dash)
             ))
 
-    # Selected center (black solid line)
     if selection and selection.get("type") == cancer_type and selection.get("chrom") == chrom:
         x = _x_from_value(selection["value"])
         shapes.append(dict(
@@ -272,11 +595,11 @@ def update_figure(cancer_type, f_type, chrom, x_mode, centers_state, provisional
             x0=x, x1=x, y0=0, y1=1, line=dict(color="black", width=3)
         ))
 
-    # Provisional center (dotted line with color depending on label)
+    # Preview line: red=pos, green=neg
     if provisional and provisional.get("type") == cancer_type and provisional.get("chrom") == chrom:
         x = _x_from_value(provisional["value"])
         lab = provisional.get("label", "pos")
-        prev_color = "green" if lab == "pos" else "red"
+        prev_color = "red" if lab == "pos" else "green"
         shapes.append(dict(
             type="line", xref=xref_name, yref="paper",
             x0=x, x1=x, y0=0, y1=1,
@@ -292,18 +615,20 @@ def update_figure(cancer_type, f_type, chrom, x_mode, centers_state, provisional
         height=520,
         margin=dict(l=70, r=80, t=60, b=60),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        # Key: keep zoom/pan/selection state
         uirevision=f"{cancer_type}-{chrom}-{x_mode}",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="rgba(255,255,255,0.88)"),
     )
     fig.add_annotation(
         x=1, y=-0.22, xref="paper", yref="paper", showarrow=False,
         text=f"{cancer_type} / {chrom}  |  file: {os.path.relpath(main_file, BASE_DIR)}",
-        font=dict(size=11, color="#666"), xanchor="right"
+        font=dict(size=11, color="rgba(255,255,255,0.65)"), xanchor="right"
     )
     return fig, centers_state
 
 
-# === 3) Graph click: add mode -> provisional; non-add mode -> snap to existing center ===
+# === Click handling ===
 @app.callback(
     Output("selection-store", "data"),
     Output("provisional-store", "data"),
@@ -346,14 +671,10 @@ def on_click_graph(clickData, add_mode, add_to_label, centers_state):
                 best = cand
         return best
 
-    # Add mode: only create a provisional center
     if "add" in (add_mode or []):
         prov = dict(type=cancer_type, chrom=chrom, label=add_to_label, value=x_clicked)
-        status = (f"Preview: ready to add {add_to_label} center @ {x_clicked:.2f} "
-                  "(takes effect only after clicking 'Confirm Add', and saving will write it to file)")
-        return None, prov, status, False, True
+        return None, prov, f"Preview: {add_to_label} @ {x_clicked:.2f}", False, True
 
-    # Select mode: snap to nearest existing center
     hit = nearest_center(label_dict, x_clicked)
     if not hit:
         return None, None, "No centers on this chromosome yet", True, True
@@ -362,17 +683,12 @@ def on_click_graph(clickData, add_mode, add_to_label, centers_state):
     tol = float(SNAP_TOL_BIN) if x_mode == "bin" else float(SNAP_TOL_BP)
     if dist <= tol:
         sel = dict(type=cancer_type, chrom=chrom, label=lab, index=idx, value=val)
-        status = (f"Selected {lab} center @ {val:.2f} "
-                  "(you may 'Delete Selected', or 'Reset Selection' to cancel)")
-        return sel, None, status, True, False
-    else:
-        return None, None, (
-            f"No center found within snap tolerance (nearest distance {dist:.2f} "
-            f"exceeds threshold {tol:.0f})"
-        ), True, True
+        return sel, None, f"Selected {lab} @ {val:.2f}", True, False
+
+    return None, None, f"No center within tolerance (nearest {dist:.2f} > {tol:.0f})", True, True
 
 
-# === 4) Confirm Add ===
+# === Confirm Add ===
 @app.callback(
     Output("centers-store", "data", allow_duplicate=True),
     Output("provisional-store", "data", allow_duplicate=True),
@@ -386,7 +702,7 @@ def confirm_add(nc, prov, centers_state):
     if not nc:
         return no_update, no_update, no_update
     if not prov:
-        return no_update, no_update, "No provisional center to confirm"
+        return no_update, no_update, "No preview to confirm"
 
     t, c, lab, val = prov["type"], prov["chrom"], prov["label"], float(prov["value"])
     centers_state = ensure_tc_dict(centers_state or {})
@@ -394,13 +710,10 @@ def confirm_add(nc, prov, centers_state):
     arr = centers_state["TYPE_CENTERS"][t][c][lab]
     arr.append(val)
     arr.sort()
-    return centers_state, None, (
-        f"Added {lab} center @ {val:.2f} "
-        "(not yet saved to file; click 'Save to YAML' to write it to disk)"
-    )
+    return centers_state, None, f"Added {lab} @ {val:.2f} (not saved yet)"
 
 
-# === 5) Delete Selected ===
+# === Delete Selected ===
 @app.callback(
     Output("centers-store", "data", allow_duplicate=True),
     Output("selection-store", "data", allow_duplicate=True),
@@ -414,7 +727,7 @@ def delete_selected(nc, sel, centers_state):
     if not nc:
         return no_update, no_update, no_update
     if not sel:
-        return no_update, no_update, "No selected center to delete"
+        return no_update, no_update, "No selected center"
 
     t, c, lab, idx, val = sel["type"], sel["chrom"], sel["label"], int(sel["index"]), float(sel["value"])
     arr = (centers_state.get("TYPE_CENTERS", {})
@@ -422,19 +735,15 @@ def delete_selected(nc, sel, centers_state):
            .get(c, {})
            .get(lab, []))
     if not arr:
-        return no_update, None, "Could not find the center to delete"
+        return no_update, None, "Could not find center"
     try:
         arr.pop(idx)
-        msg = (
-            f"Deleted {lab} center @ {val:.2f} "
-            "(not yet saved to file; click 'Save to YAML' to write changes to disk)"
-        )
-        return centers_state, None, msg
+        return centers_state, None, f"Deleted {lab} @ {val:.2f} (not saved yet)"
     except Exception:
         return no_update, None, "Delete failed: invalid index"
 
 
-# === 6) Reset selection/provisional ===
+# === Reset selection/provisional ===
 @app.callback(
     Output("selection-store", "data", allow_duplicate=True),
     Output("provisional-store", "data", allow_duplicate=True),
@@ -445,10 +754,10 @@ def delete_selected(nc, sel, centers_state):
 def reset_selection(nc):
     if not nc:
         return no_update, no_update, no_update
-    return None, None, "Selection and preview have been reset"
+    return None, None, "Selection and preview reset"
 
 
-# === 7) Save to YAML ===
+# === Save to YAML ===
 @app.callback(
     Output("status-text", "children", allow_duplicate=True),
     Input("save-yaml-btn", "n_clicks"),
@@ -459,7 +768,11 @@ def save_yaml(nc, centers_state):
     if not nc:
         return no_update
     centers_state = centers_state or {}
-    out_path = centers_state.get("_centers_yaml_path", "./center_position.yaml")
+    out_path = centers_state.get("_centers_yaml_path", "")
+
+    if not out_path:
+        return "Save failed: no YAML file set (Create new file or Load file first)"
+
     try:
         data_to_dump = {"TYPE_CENTERS": centers_state.get("TYPE_CENTERS", {})}
         with open(out_path, "w", encoding="utf-8") as f:

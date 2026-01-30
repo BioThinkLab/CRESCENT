@@ -1,0 +1,8 @@
+Data_pack/
+/Data_pack/
+/Main_pack/run/bin_with_case_amp/EXAMPLE/
+/Main_pack/run/result/EXAMPLE/
+/Main_pack/run/output/sorted/BLCA/
+.DS_Store
+__pycache__/
+*.pyc

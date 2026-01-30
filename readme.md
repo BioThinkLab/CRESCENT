@@ -16,6 +16,9 @@ pip install -r requirements.txt
 
 
 ## Input File Format
+The input data of both following format can be provided across multiple files. The program will automatically merge **all input files within the target directory** and perform downstream analysis on the combined dataset.
+
+### Integer copy number format
 The input file should be a tab-separated values (TSV) file with the following columns:
 
 ```tsv
@@ -28,7 +31,22 @@ GDC_Aliquot	Chromosome	Start	End	Copy_Number	Major_Copy_Number	Minor_Copy_Number
 >The example input shown above is taken from the first few lines of the TCGA file  
 `TCGA-BLCA.0aeed974-9ad8-4208-9c09-43418386665f.ascat3.allelic_specific.seg.txt`.
 
-The input data can be provided across multiple files. The program will automatically merge **all input files within the target directory** and perform downstream analysis on the combined dataset.
+Make sure there are columns named `Chromosome`, `Start`, `End`, `Copy_Number`,The first column can have other name, as long as it is used to mark different case.
+
+### Log2ratio format copy number
+```tsv
+Sample	Chromosome	Start	End	Num_Probes	Segment_Mean
+S0001	1	3218610	5838773	289	0.408563
+S0001	1	5844802	9012691	360	0.845405
+S0001	1	9012737	28712545	1834	0.838700
+S0001	1	28716679	33008483	523	2.682358
+S0001	1	33019130	33032412	3	1.244822
+S0001	1	33045735	34651385	191	2.682358
+S0001	1	34653822	40301092	657	3.974571
+```
+In this format, `Segment_Mean` represent copy number value, with its meaning of Segment_Mean = log2(Tumor signal / Normal reference). CRESCENT can also handle this format, make sure the column name is exactly `Segment_Mean`, `Num_Probes`in the distance is not necessary.
+
+
 
 ## Conducting Analysis
 * Create a new directory (with any name you like, suppose it's "EXAMPLE") under `Data/input` to store the files used for a single analysis. 
