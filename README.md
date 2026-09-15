@@ -104,4 +104,6 @@ Results are written under `Main_pack/run/result/<project>/<mutation_type>`.
 
 The implementation is in `Main_pack/run/pipeline.py`; normal users only need to edit the control panel.
 
+4. Visualization through /CRESCENT/visualization/dataset_check.py
+
 
