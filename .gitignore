@@ -1,8 +1,52 @@
-Data_pack/
+# Local input data (keep only the directory placeholders)
 /Data_pack/
-/Main_pack/run/bin_with_case_amp/EXAMPLE/
-/Main_pack/run/result/EXAMPLE/
-/Main_pack/run/output/sorted/BLCA/
+/Main_pack/Data/input/**
+!/Main_pack/Data/input/.gitkeep
+!/Main_pack/Data/input/TEST/
+/Main_pack/Data/input/TEST/**
+!/Main_pack/Data/input/TEST/.gitkeep
+
+# Runtime-generated data
+/Main_pack/run/._prepared_inputs/
+/Main_pack/run/build/**
+!/Main_pack/run/build/.gitkeep
+/Main_pack/run/bin_with_case_*/**
+!/Main_pack/run/bin_with_case_amp/.gitkeep
+!/Main_pack/run/bin_with_case_del/.gitkeep
+/Main_pack/run/buffer/**
+!/Main_pack/run/buffer/.gitkeep
+!/Main_pack/run/buffer/instance/
+/Main_pack/run/buffer/instance/**
+!/Main_pack/run/buffer/instance/.gitkeep
+!/Main_pack/run/buffer/inference_buffer/
+/Main_pack/run/buffer/inference_buffer/**
+!/Main_pack/run/buffer/inference_buffer/.gitkeep
+/Main_pack/run/result/**
+!/Main_pack/run/result/.gitkeep
+/Main_pack/run/output/sorted/**
+!/Main_pack/run/output/sorted/.gitkeep
+
 .DS_Store
 __pycache__/
 *.pyc
+
+# IDE and editor settings
+.idea/
+.vscode/
+.vs/
+.fleet/
+.settings/
+*.iml
+*.ipr
+*.iws
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.project
+.classpath
+
+# Editor temporary files
+*.swp
+*.swo
+*~

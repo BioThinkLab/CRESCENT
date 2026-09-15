@@ -8,7 +8,7 @@ import shutil
 CONFIG = {
     "IS_TEST": False,
     "DATA_BASE_DIR": "./bin_with_case_amp",
-    "FILE_EXTENSION": ".tsv",
+    "FILE_EXTENSION": ".txt",
     "FEATURE_COL_START": 3,
     "FIXED_FEATURE_COLS": 40,
     "FEATURE_COL_END": 3 + 40,
@@ -132,22 +132,38 @@ def write_sample_tsv(filepath, scale_matrices, label):
     Write multiple matrices into one file, each matrix as a section.
     The file starts with label information.
     """
-    with open(filepath, "w") as f:
-        f.write(f"label: {label}\n")
-        for i, mat in enumerate(scale_matrices):
-            H, W = mat.shape
-            f.write(f"scale: {i}, shape: {H}x{W}\n")
-            for row in mat:
-                f.write("\t".join(map(str, row)) + "\n")
-            f.write("\n")
-    print(f"Wrote: {filepath}")
+    # Write atomically so an interrupted/full-disk write cannot leave a
+    # malformed .tsv that the inference loader later tries to parse.
+    temp_filepath = filepath + ".tmp"
+    try:
+        with open(temp_filepath, "w") as f:
+            f.write(f"label: {label}\n")
+            for i, mat in enumerate(scale_matrices):
+                H, W = mat.shape
+                f.write(f"scale: {i}, shape: {H}x{W}\n")
+                for row in mat:
+                    f.write("\t".join(map(str, row)) + "\n")
+                f.write("\n")
+        os.replace(temp_filepath, filepath)
+    except Exception:
+        if os.path.exists(temp_filepath):
+            os.remove(temp_filepath)
+        raise
 
 
 import numpy as np
 import os
 
 
-def process_one_chromosome(type_name, chrom, df_chrom):
+def process_one_chromosome(
+    type_name,
+    chrom,
+    df_chrom,
+    row_start=0,
+    row_end=None,
+    write_progress=True,
+    scale_shapes=None,
+):
     """
     For each row in the input file, use the row's start position as center,
     extract multi-scale feature matrices and write samples.
@@ -158,14 +174,15 @@ def process_one_chromosome(type_name, chrom, df_chrom):
     output_dir   = CONFIG["OUTPUT_DIR"]
     feat_start   = CONFIG["FEATURE_COL_START"]
     feat_end     = CONFIG["FEATURE_COL_END"]
-    scale_shapes = CONFIG["SCALE_INPUT_SHAPES"]
+    scale_shapes = scale_shapes or CONFIG["SCALE_INPUT_SHAPES"]
     progress_path = os.path.join(output_dir, f".{type_name}_progress")
 
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
 
     # Treat each row as a sampling center
-    for idx, row in df_chrom.iterrows():
+    selected_rows = df_chrom.iloc[row_start:row_end]
+    for idx, row in selected_rows.iterrows():
         center_pos = float(row.iloc[0])   # First column is start coordinate (bp)
         scale_matrices = []
         skip = False
@@ -204,18 +221,86 @@ def process_one_chromosome(type_name, chrom, df_chrom):
         )
 
     # After finishing this chromosome, record progress
-    with open(progress_path, "a") as pf:
-        pf.write(f"{chrom}\n")
+    if write_progress:
+        with open(progress_path, "a") as pf:
+            pf.write(f"{chrom}\n")
 
 import os
 import glob
 import pandas as pd
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-def generate_samples_auto_parallel(type_name, chrom_list=None):
-    if os.path.exists(CONFIG["OUTPUT_DIR"]):
-        shutil.rmtree(CONFIG["OUTPUT_DIR"])
-    os.makedirs(CONFIG["OUTPUT_DIR"], exist_ok=True)
+
+def _clear_sample_output(output_dir):
+    os.makedirs(output_dir, exist_ok=True)
+    for name in os.listdir(output_dir):
+        if name == ".gitkeep":
+            continue
+        path = os.path.join(output_dir, name)
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+        else:
+            os.remove(path)
+
+
+def _normalize_chrom(value):
+    value = str(value).strip()
+    if value.lower().startswith("chr"):
+        value = value[3:]
+    return value.upper()
+
+
+def _load_chromosome_data(type_name, chromosome, base_dir=None):
+    base_dir = base_dir or CONFIG["DATA_BASE_DIR"]
+    type_dir = os.path.join(base_dir, type_name)
+    file_list = glob.glob(os.path.join(type_dir, "*" + CONFIG["FILE_EXTENSION"]))
+    wanted = _normalize_chrom(chromosome)
+    frames = []
+    output_chromosome = None
+
+    for filepath in file_list:
+        frame = pd.read_csv(filepath, sep="\t", dtype={"chr": str})
+        frame["origin_file"] = os.path.basename(filepath)
+        frame["orig_idx"] = frame.index
+        for chrom in frame["chr"].unique():
+            if _normalize_chrom(chrom) == wanted:
+                frames.append(frame[frame["chr"] == chrom])
+                output_chromosome = chrom
+
+    if not frames:
+        raise ValueError(f"Chromosome {chromosome} not found in {type_dir}")
+    return output_chromosome, pd.concat(frames, ignore_index=True)
+
+
+def generate_sample_chunks(
+    type_name, chromosome, chunk_size=500, base_dir=None, scale_shapes=None
+):
+    """Generate bounded sample chunks and yield metadata for each completed chunk."""
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be greater than zero")
+
+    output_dir = CONFIG["OUTPUT_DIR"]
+    chrom, frame = _load_chromosome_data(type_name, chromosome, base_dir=base_dir)
+    total_rows = len(frame)
+    total_chunks = (total_rows + chunk_size - 1) // chunk_size
+
+    for chunk_index, start in enumerate(range(0, total_rows, chunk_size), start=1):
+        end = min(start + chunk_size, total_rows)
+        _clear_sample_output(output_dir)
+        process_one_chromosome(
+            type_name,
+            chrom,
+            frame,
+            row_start=start,
+            row_end=end,
+            write_progress=False,
+            scale_shapes=scale_shapes,
+        )
+        yield chunk_index, total_chunks, end - start
+
+def generate_samples_auto_parallel(
+    type_name, chrom_list=None, base_dir=None, scale_shapes=None
+):
     """
     Generate samples in parallel, optionally only processing specified chromosomes.
 
@@ -223,10 +308,14 @@ def generate_samples_auto_parallel(type_name, chrom_list=None):
     :param chrom_list: list of chromosomes to process (e.g. ['1','2','X']),
                        process all chromosomes if None
     """
-    base_dir = CONFIG["DATA_BASE_DIR"]
+    base_dir = base_dir or CONFIG["DATA_BASE_DIR"]
     output_dir = CONFIG["OUTPUT_DIR"]
+    _clear_sample_output(output_dir)
+
     type_dir = os.path.join(base_dir, type_name)
     file_list = glob.glob(os.path.join(type_dir, "*" + CONFIG["FILE_EXTENSION"]))
+
+    wanted = None if chrom_list is None else {_normalize_chrom(c) for c in chrom_list}
 
     # ———— Merge files by chromosome ————
     chrom_data = {}
@@ -235,6 +324,8 @@ def generate_samples_auto_parallel(type_name, chrom_list=None):
         df['origin_file'] = os.path.basename(fp)
         df['orig_idx'] = df.index
         for chrom in df['chr'].unique():
+            if wanted is not None and _normalize_chrom(chrom) not in wanted:
+                continue
             chrom_data.setdefault(chrom, []).append(df[df['chr'] == chrom])
 
     # Concatenate DataFrames of the same chromosome
@@ -242,27 +333,35 @@ def generate_samples_auto_parallel(type_name, chrom_list=None):
         chrom_data[chrom] = pd.concat(chrom_data[chrom], ignore_index=True)
 
     # ———— Filter chromosomes if specified ————
-    if chrom_list is not None:
-        wanted = set(map(str, chrom_list))
-        available = set(chrom_data.keys())
-        to_process = available & wanted
-        if not to_process:
-            raise ValueError(f"Specified chromosomes not found: {chrom_list}, available: {sorted(available)}")
-        chrom_data = {c: chrom_data[c] for c in to_process}
+    if chrom_list is not None and not chrom_data:
+        raise ValueError(f"Specified chromosomes not found: {chrom_list}")
 
     # ———— Parallel execution ————
     max_workers = CONFIG.get("MAX_WORKERS", 20)
+    errors = []
     with ProcessPoolExecutor(max_workers=max_workers) as exe:
         futures = []
         for chrom, dfs in chrom_data.items():
             futures.append(
-                exe.submit(process_one_chromosome, type_name, chrom, dfs)
+                exe.submit(
+                    process_one_chromosome,
+                    type_name,
+                    chrom,
+                    dfs,
+                    scale_shapes=scale_shapes,
+                )
             )
         for f in as_completed(futures):
             try:
                 f.result()
             except Exception as e:
-                print(f"Subprocess error: {e}")
+                errors.append(e)
+
+    if errors:
+        raise RuntimeError(
+            f"Sample generation failed in {len(errors)} worker(s); "
+            f"first error: {errors[0]}"
+        )
 
     # ———— Clean up progress file ————
     progress_path = os.path.join(output_dir, f".{type_name}_progress")

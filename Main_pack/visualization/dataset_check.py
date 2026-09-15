@@ -505,7 +505,7 @@ def update_figure(cancer_type, f_type, chrom, x_mode, centers_state, provisional
         BASE_DIR,
         "bin_with_case_amp" if f_type == "amp" else "bin_with_case_del",
         cancer_type,
-        f"cnv_{chrom}" + (".txt" if f_type == "amp" else ".tsv")
+        f"cnv_{chrom}" + (".txt")
     )
     df = load_tsv(main_file)
     fig = go.Figure()

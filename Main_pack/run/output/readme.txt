@@ -1,2 +1,0 @@
-本目录下的sorted目录下是新版筛选armlevel的代码的输出
-bins是不区分case的bin，暂时没用并且数据可能有问题

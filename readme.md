@@ -49,13 +49,27 @@ In this format, `Segment_Mean` represent copy number value, with its meaning of 
 
 
 ## Conducting Analysis
-* Create a new directory (with any name you like, suppose it's "EXAMPLE") under `Data/input` to store the files used for a single analysis. 
-* change paramarpers in `run.py` in your demand, major para and its option, meaning in the following.
-  * `project_name`: same as the name of the directory you put input file.
-  * `mutation_type`: the mutation type you want to analyse, can only be `"amp"` or `"del"`, which means amplification and deletion.
-  * `classification_threshold`:The decision threshold used to convert predicted probabilities into binary class labels.
 
-* after changing parameter above, run `run.py` and it will go automatically. The final result will be in `/Main_pack/run/result`
+1. Create one folder per analysis under `Main_pack/Data/input`, for example `Main_pack/Data/input/EXAMPLE`.
+2. Edit the control panel in `Main_pack/run/run.py`:
+   - `PROJECT_NAMES`: project folder names, such as `["EXAMPLE"]` or `["PROJECT_A", "PROJECT_B"]`.
+   - `MUTATION_TYPE`: `"amp"` or `"del"`.
+   - `CHROMOSOME_NUMBERS`: leave empty for all chromosomes, or use a subset such as `[1, 8, 12]`.
+   - `ONLY_USE_FOCAL`: whether to remove arm-level events.
+   - `CLASSIFICATION_THRESHOLD`: probability threshold for the final segments.
+   - `USE_CHUNKING`: enable bounded temporary storage; when disabled, low disk space produces a warning but does not stop execution.
+   - `SAMPLES_PER_CHUNK`: maximum temporary samples stored at once; reduce it when disk space is limited.
+   - `LOW_DISK_WARNING_GB`: free-space threshold used for warnings.
+3. Run the control panel from any working directory:
+
+```bash
+python /path/to/CRESCENT/Main_pack/run/run.py
+```
+
+Results are written under `Main_pack/run/result/<project>/<mutation_type>`.
+
+The implementation is in `Main_pack/run/pipeline.py`; normal users only need to edit the control panel.
+
  ## C++ Compilation (Auto & Manual)
 
 This project includes an automatic C++ compilation step.  
