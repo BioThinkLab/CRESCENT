@@ -150,7 +150,7 @@ def merge_regions(df):
     return merged_df
 
 
-def to_segment(cancer_type, mut_type, threshold=0.5, peak=None):
+def to_segment(cancer_type, mut_type, threshold=0.5, peak=None, chrom_list=None):
 
 
     data_dir = (
@@ -191,6 +191,17 @@ def to_segment(cancer_type, mut_type, threshold=0.5, peak=None):
     txt_files  = glob.glob(os.path.join(data_dir, "*.txt"))
     tsv_files  = glob.glob(os.path.join(data_dir, "*.tsv"))
     input_files = txt_files + tsv_files
+    if chrom_list:
+        wanted = {
+            str(chrom)[3:] if str(chrom).lower().startswith("chr") else str(chrom)
+            for chrom in chrom_list
+        }
+
+        def _is_selected(path):
+            match = re.search(r"chr([^_.]+)", os.path.basename(path), re.IGNORECASE)
+            return bool(match and match.group(1) in wanted)
+
+        input_files = [path for path in input_files if _is_selected(path)]
     print(len(input_files))
     # —— 剔除文件名包含 chrX/chrY（大小写不敏感），或仅为大写 X/Y 的文件 ——
     def _exclude_xy(fname: str) -> bool:

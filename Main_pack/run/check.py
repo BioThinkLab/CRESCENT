@@ -46,9 +46,17 @@ def run_inference(
     chr_list=None,
     show_progress=True,
     progress_mininterval=1.0,
-    progress_miniters=20
+    progress_miniters=20,
+    append_results=False,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device.type == "cuda":
+        print(f"Inference device: CUDA ({torch.cuda.get_device_name(0)})")
+    else:
+        print(
+            f"Inference device: CPU (torch={torch.__version__}). "
+            "Install a CUDA-enabled PyTorch build to use the GPU."
+        )
 
     # 1. 加载数据集
     dataset = TSVDataset(data_dir, chromosome_list=chr_list)
@@ -57,7 +65,10 @@ def run_inference(
     print("dataset initiated")
 
     # 2. DataLoader（更适合大数据的设置）
-    num_workers = 10
+    # TSV parsing is CPU-heavy. Keep the default bounded so it does not occupy
+    # every core; advanced users can override it through the environment.
+    default_workers = min(4, os.cpu_count() or 1)
+    num_workers = max(0, int(os.environ.get("CRESCENT_NUM_WORKERS", default_workers)))
     loader = DataLoader(
         dataset,
         batch_size=batch_size,
@@ -134,20 +145,29 @@ def run_inference(
     os.makedirs(out_dir, exist_ok=True)
     output_path = os.path.join(out_dir, output_file)
     df = pd.DataFrame(results)
-    df.to_csv(output_path, sep='\t', index=False)
+    write_header = not append_results or not os.path.exists(output_path)
+    df.to_csv(
+        output_path,
+        sep='\t',
+        index=False,
+        mode='a' if append_results else 'w',
+        header=write_header,
+    )
     print(f"Saved inference results to {output_path}")
+    return output_path
 
-def run_inf(project_name, mut):
+def run_inf(project_name, mut, chr_list=None, append_results=False):
     cancer_list = project_name
     mut_type = mut
     DATA_DIR = "./buffer/instance"
     output_file=f"inference_results_{mut_type}_{project_name}.tsv"
     print(f"input_dir={DATA_DIR}")
     MODEL_PATH = f"../Model/model_{mut}.pth"
-    run_inference(
+    return run_inference(
         DATA_DIR,
         MODEL_PATH,
         batch_size=72,
         output_file= output_file,
-        chr_list=None
+        chr_list=chr_list,
+        append_results=append_results,
     )

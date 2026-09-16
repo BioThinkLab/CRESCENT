@@ -36,11 +36,14 @@ def process_file(file_path: str, output_path: str, k: int, sep: str = '\t') -> N
     df = pd.read_csv(file_path, sep=sep)
 
     # 1. 元信息列和 suffix 列
-    meta_cols   = df.columns[:3].tolist()    # 可改 N_META
-    suffix_cols = df.columns[-1:].tolist()   # 可改 N_SUFFIX
+    meta_cols = df.columns[:3].tolist()
+    suffix_cols = [
+        col for col in df.columns[3:]
+        if str(col).strip().lower() in {"sum", "prob"}
+    ]
 
     # 2. 中间原始数据列
-    data_cols = df.columns[3:-1].tolist()
+    data_cols = [col for col in df.columns[3:] if col not in suffix_cols]
 
     # 3. 补齐不足 k 列
     if len(data_cols) < k:
@@ -77,16 +80,18 @@ def process_file(file_path: str, output_path: str, k: int, sep: str = '\t') -> N
     df_out.to_csv(output_path, sep='\t', index=False)
 
 
-def compress():
+def compress(base_input_dir=None, output_dir=None, include_root=False):
     VALID_EXTS = ('.txt', '.tsv')
+    input_root = os.path.abspath(base_input_dir or BASE_INPUT_DIR)
+    output_root = os.path.abspath(output_dir or OUTPUT_DIR)
 
-    for root, dirs, files in os.walk(BASE_INPUT_DIR):
+    for root, dirs, files in os.walk(input_root):
         # 如果也想处理 BASE_INPUT_DIR 本身，就去掉这行判断
-        if root == BASE_INPUT_DIR:
+        if not include_root and os.path.abspath(root) == input_root:
             continue
 
-        rel_dir = os.path.relpath(root, BASE_INPUT_DIR)
-        out_dir = os.path.join(OUTPUT_DIR, rel_dir)
+        rel_dir = os.path.relpath(root, input_root)
+        out_dir = os.path.join(output_root, rel_dir)
 
         for fname in files:
             if not fname.lower().endswith(VALID_EXTS):
